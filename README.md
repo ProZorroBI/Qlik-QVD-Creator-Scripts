@@ -1,2 +1,2 @@
 # QlikScripts
-Qlik View and QlikSense Scripts for creating QVD files
+QlikView and Qlik Sense Scripts for creating QVD files
