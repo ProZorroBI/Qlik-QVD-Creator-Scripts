@@ -1,0 +1,1321 @@
+﻿///$tab Main
+//3.0
+SET ThousandSep=' ';
+SET DecimalSep=',';
+SET MoneyThousandSep=' ';
+SET MoneyDecimalSep=',';
+SET MoneyFormat='# ##0,00 ₴;-# ##0,00 ₴';
+SET TimeFormat='h:mm:ss';
+SET DateFormat='DD.MM.YYYY';
+SET TimestampFormat='DD.MM.YYYY h:mm:ss[.fff]';
+SET MonthNames='янв;фев;мар;апр;май;июн;июл;авг;сен;окт;ноя;дек';
+SET DayNames='Пн;Вт;Ср;Чт;Пт;Сб;Вс';
+
+LET vStartPeriod = MakeDate(2015, 2, 1);
+LET vEndPeriod = Today(1) + 6; // Курсы валют выставляются на будущую дату следующего или послепраздничного дня
+
+LET vCurrentDate = Today(1);
+
+SET DIC_QVD_PATH = '..\04_DataBase\02_QVD_DB\01_Dictionary\';
+SET TRN_QVD_PATH = '..\04_DataBase\02_QVD_DB\02_Transaction\';
+SET FILES_PATH = '..\04_DataBase\01_DataFiles\';
+
+SET R_FILES_PATH = 'C:/QlikView/04_DataBase/01_DataFiles';
+
+SET vBatchLimit = '?limit=1000';
+SET vBatchLimit_C = '?limit=1000';
+SET vMode = '&mode=_all_';
+SET vMethod = 'get';
+
+SET vBaseURL = 'https://public.api.openprocurement.org/api/0/tenders'; // Live 
+SET vBaseURL_C = 'https://public.api.openprocurement.org/api/0/contracts'; 
+
+SET vDateConvert = "ConvertToLocalTime($1)";
+
+// Файл со справочниками Гугл таблица
+SET vPZOrgURL = 'https://docs.google.com/spreadsheets/d/11K8M9CjC2QcPkRDdzJLeI6C9tC6SSMfV4Z71fhuzSE8/export?format=xlsx';
+
+SET vHelpURL = 'https://docs.google.com/spreadsheets/d/10_EYMciEo_RGk5Ng0FsVgi_iWGpAnj77S2NFFcaMslg/export?format=xlsx'; //перевод хэлпов
+
+SET vGPADictionary ='https://docs.google.com/spreadsheets/u/1/d/1LEy18iO2f0KH0PBmmEthyCwDaQI4D594fwabunFsnAA/export?format=xlsx';
+
+// Адреса справочников доноров
+//SET vFundersURLua ='http://standards.openprocurement.org/codelists/tender-funders/ua.json';
+//SET vFundersURLen ='http://standards.openprocurement.org/codelists/tender-funders/en.json';
+//SET vFundersURLru ='http://standards.openprocurement.org/codelists/tender-funders/ru.json';
+
+//SET vFundersURLua ='https://prozorroukr.github.io/standards/codelists/tender-funders/ua.json';
+//SET vFundersURLen ='https://prozorroukr.github.io/standards/codelists/tender-funders/en.json';
+//SET vFundersURLru ='https://prozorroukr.github.io/standards/codelists/tender-funders/ru.json';
+
+SET vFundersURL ='https://prozorroukr.github.io/standards/codelists/tender_funders.json';
+
+// Справочник черного списка АМКУ
+SET vBLAMKU = 'http://www.amc.gov.ua/amku/doccatalog/document?id=133394&schema=main';
+
+// Справочник регулярных выражений, причин разрыва договоров, дисквалификаций
+SET vRegExpFile = 'https://docs.google.com/spreadsheets/d/1Xmxr6PiMuHEDDAQYRrlH97VoWf-vOYV4_T-VXwBZ9Os/export?format=xlsx'; // OLD
+SET vDicTable = 'https://docs.google.com/spreadsheets/d/1a8jsXpU4Ln6tVXyZ8NBeTej8xjn4_AlhllQBwyKjQNw/export?format=xlsx';
+
+// Справочник ДРЛЗ
+SET vDRLZUrl = 'http://www.drlz.com.ua/ibp/zvity.nsf/all/zvit/$file/reestr.csv';
+SET vDRLZstaticUrl = 'https://docs.google.com/spreadsheets/d/1B-6muSsRA20buCAoBpxeW0AvplRYdKCDabVYCa0n9xM/export?format=xlsx&id=1B-6muSsRA20buCAoBpxeW0AvplRYdKCDabVYCa0n9xM';
+
+// Справочник МНН
+SET vINNinNP = 'https://docs.google.com/spreadsheets/d/1y5zkYauWA2SyxmkiYTZuJ_suEqYYQLZUTYal9bNiRaU/gviz/tq?tqx=out:html&tq&gid=1174057939';
+
+
+//LET vDelayTime = Round(600000*Rand());
+
+//LET vTimeOut = Interval(vDelayTime/(1000*60*60*24), 'm:ss');
+
+//TRACE TimeOut = $(vTimeOut);
+
+//SLEEP $(vDelayTime);
+
+
+///$tab 1 Currency
+//
+// Загрузка курсов валют 
+//
+// Время загрузки курсов валют
+SUB LoadExchangeRate(CurrencyCode, CurrencyLabel, StartPeriod, EndPeriod, LastResult)
+
+	LET StartPeriod6 = StartPeriod - 6; // Для сдвига периода запроса в конце текущего месяца - ссылка не возвращает никаких данных, если в заданном периоде не было курсов
+
+	LET vURLcurr = 	'http://bank.gov.ua/control/uk/curmetal/currency/search?formType=searchPeriodForm&time_step=daily&currency='& CurrencyCode &'&periodStartTime='&Date('$(StartPeriod6)', 'DD.MM.YYYY')&'&periodEndTime='&Date('$(EndPeriod)', 'DD.MM.YYYY')&'&outer=table&execute=%D0%92%D0%B8%D0%BA%D0%BE%D0%BD%D0%B0%D1%82%D0%B8';
+		
+	ExchangeRateTmp:
+	LOAD Date('$(vPeriodStart)' + RecNo() - 1) as Date
+	AutoGenerate '$(EndPeriod)' - '$(StartPeriod)' + 1;
+		
+	LEFT JOIN(ExchangeRateTmp)
+	LOAD @1 as Date, 
+	     @3 as Qnty, 
+	     @4 as Exch,
+	     @4 / @3 as Rate_
+	FROM
+	[$(vURLcurr)]
+	(html, codepage is 1251, no labels, table is @4);
+	
+	ExchangeRate_:
+	LOAD
+		Date,
+		if(IsNull(Rate_) and Day(Date) = 1, '$(LastResult)',  
+			if(IsNull(Rate_), peek('Rate'), Rate_)) as Rate,
+		'$(CurrencyLabel)' as Currency,
+		1 as Fake
+	RESIDENT ExchangeRateTmp
+	ORDER BY Date;
+	
+	LET LastResult = Num(floor(Peek('Rate', -1, 'ExchangeRate_'), 0.01));
+	
+	DROP TABLE ExchangeRateTmp;
+		
+	ExchangeRate:
+	LOAD
+		Date as Дата,
+		Currency as Валюта,
+		floor(Rate, 0.01) as Курс
+	RESIDENT ExchangeRate_;
+
+	DROP TABLE ExchangeRate_;
+
+END SUB
+
+LET vYM = Date('$(vCurrentDate)', 'YYYY_MM');
+LET vYMPrev = Date(AddMonths('$(vCurrentDate)', -1), 'YYYY_MM');
+LET vFTime = Floor(FileTime('$(TRN_QVD_PATH)Currency_$(vYM).qvd'));
+
+
+IF IsNull(FileSize('$(TRN_QVD_PATH)Currency_$(vYMPrev).qvd')) THEN
+
+	TRACE Загрузка курсов с начала;
+
+	LET vIncPeriod = vStartPeriod;
+
+	LET vLastUSD = 0;
+	LET vLastEUR = 0;
+	LET vLastRUB = 0;
+	LET vLastGBP = 0;
+	
+ELSE
+	
+	TRACE Загрузка курсов с начала месяца;
+
+// Определение максимальной даты курсов в QVD файле	
+				
+	LET vIncPeriod = MonthStart('$(vCurrentDate)');
+	
+// Определение последнего значения курсов предшествующего начальной дате периода	
+	LastUSD:
+	LOAD
+		Дата, Валюта, Курс
+	From [$(TRN_QVD_PATH)Currency_$(vYMPrev).qvd] (qvd)
+	Where Валюта='USD' AND Дата='$(vIncPeriod)' - 1;	
+	
+	LET vLastUSD = Peek('Курс', -1, 'LastUSD');
+	
+	DROP Table LastUSD;
+	
+	LastEUR:
+	LOAD
+		Дата, Валюта, Курс
+	From [$(TRN_QVD_PATH)Currency_$(vYMPrev).qvd] (qvd)
+	Where Валюта='EUR' AND Дата='$(vIncPeriod)' - 1;	
+	
+	LET vLastEUR = Peek('Курс', -1, 'LastEUR');
+	
+	DROP Table LastEUR;
+	
+	LastRUB:
+	LOAD
+		Дата, Валюта, Курс
+	From [$(TRN_QVD_PATH)Currency_$(vYMPrev).qvd] (qvd)
+	Where Валюта='RUB' AND Дата='$(vIncPeriod)' - 1;	
+	
+	LET vLastRUB = Peek('Курс', -1, 'LastRUB');
+	
+	DROP Table LastRUB;
+	
+	LastGBP:
+	LOAD
+		Дата, Валюта, Курс
+	From [$(TRN_QVD_PATH)Currency_$(vYMPrev).qvd] (qvd)
+	Where Валюта='GBP' AND Дата='$(vIncPeriod)' - 1;	
+	
+	LET vLastGBP = Peek('Курс', -1, 'LastGBP');
+	
+	DROP Table LastGBP;
+	
+ENDIF
+
+DO
+
+	LET vPeriodStart = rangemax(MonthStart(vIncPeriod), vStartPeriod);
+	LET vPeriodEnd = rangemin(MonthEnd(vIncPeriod), vEndPeriod);
+	LET vPeriod = Year(vIncPeriod) & '_' & text(num(Month(vIncPeriod),'00'));	
+		
+	TRACE $(vPeriod);
+
+	CALL LoadExchangeRate(169, 'USD', '$(vPeriodStart)', '$(vPeriodEnd)', vLastUSD);
+	CALL LoadExchangeRate(196, 'EUR', '$(vPeriodStart)', '$(vPeriodEnd)', vLastEUR);	
+	CALL LoadExchangeRate(209, 'RUB', '$(vPeriodStart)', '$(vPeriodEnd)', vLastRUB);
+	CALL LoadExchangeRate(163, 'GBP', '$(vPeriodStart)', '$(vPeriodEnd)', vLastGBP);
+	
+	STORE ExchangeRate INTO $(TRN_QVD_PATH)Currency_$(vPeriod).qvd (qvd);
+	
+	DROP TABLE ExchangeRate;
+
+	LET vIncPeriod = AddMonths(vIncPeriod, 1);
+
+LOOP WHILE NOT InMonth(vIncPeriod, vEndPeriod, 1);
+
+
+///$tab 2 AddDic Tenders
+// Дополнительные таблицы загружаются независимо от наличия обновленных тендеров
+// В них не формируются ключевые поля через Autonumber
+
+
+// Иерархия Организаторов
+
+/* Старый источник
+HierarchyOrganizator:
+LOAD Distinct
+	 text([ЄДРПОУ]) as IDOrganizator, 
+     [Коротка назва (замовник)] as [Краткое название], 
+     [Головний орган] as [Главный орган], 
+     [Другорядний орган] as [Второстепенный орган],
+     [Екаунт менеджер] as [Менеджер],
+     [Short name],
+     [Secondary agency],
+     [Head agency]
+FROM
+[$(vPZOrgURL)]
+(ooxml, embedded labels, table is Register)
+Where NOT IsNull([ЄДРПОУ]);
+
+STORE  HierarchyOrganizator into $(DIC_QVD_PATH)HierarchyOrganizator.qvd (qvd);
+DROP Table HierarchyOrganizator;
+*/
+
+OLEDB CONNECT TO [Provider=SQLOLEDB.1;Persist Security Info=True;User ID=readonlylogin;Initial Catalog=demo;Data Source=tiukrainesql.database.windows.net;Use Procedure for Prepare=1;Auto Translate=True;Packet Size=4096;Workstation ID=BIPRO;Use Encryption for Data=False;Tag with column collation when possible=False] (XPassword is OPXAfYIGTJMCSREITCRMUQEMGH);
+
+HierarchyOrganizator:
+LOAD Distinct
+	Trim(Replace(Replace("Head agency", Chr(10), ' '), Chr(13), ' ')) as "Head agency",
+    Trim(Replace(Replace("Secondary agency", Chr(10), ' '), Chr(13), ' ')) as "Secondary agency",
+    Trim(Replace(Replace("Short name", Chr(10), ' '), Chr(13), ' ')) as "Short name",
+    Trim(Replace(Replace("Головний орган", Chr(10), ' '), Chr(13), ' ')) as [Главный орган],
+    Trim(Replace(Replace("Другорядний орган", Chr(10), ' '), Chr(13), ' ')) as [Второстепенный орган],
+    "Екаунт менеджер" as [Менеджер],
+    Trim(Replace(Replace("Коротка назва (замовник)", Chr(10), ' '), Chr(13), ' ')) as [Краткое название],
+    text([ЄДРПОУ]) as IDOrganizator,
+    "Функції замовників",
+    "Procurement entity functions"
+;
+SQL SELECT "Head agency",
+    "Secondary agency",
+    "Short name",
+    "Головний орган",
+    "Другорядний орган",
+    "Екаунт менеджер",
+    "Коротка назва (замовник)",
+    "ЄДРПОУ",
+    "Функції замовників",
+    "Procurement entity functions"
+FROM demo.dbo."Prozorro_Organizations"
+Where  [ЄДРПОУ] Is NOT Null;
+
+STORE  HierarchyOrganizator into $(DIC_QVD_PATH)HierarchyOrganizator.qvd (qvd);
+DROP Table HierarchyOrganizator;
+
+// Загрузка справочника доноров
+//ТЗ https://docs.google.com/document/d/1IJvp-3h06JiImNFiuQnJRi1JooEjycj6CS4HT5qz8To/edit
+CUSTOM CONNECT TO "Provider=QvRestConnector.exe;url=$(vFundersURL);sendExpect100Continue=True;checkResponseTypeOnTestConnection=true;authSchema=anonymous;skipServerCertificateValidation=1;timeout=30;method=GET;autoDetectResponseType=true;keyGenerationStrategy=3;useWindowsAuthentication=false;useCertificate=No;certificateStoreLocation=CurrentUser;certificateStoreName=My;PaginationType=None;XUserId=***;XPassword=***;";
+
+RestConnectorMasterTableFunder:
+SQL SELECT 
+	"name_en" AS "name_en_u0",
+	"name_uk" AS "name_uk_u0",
+	"name_ru" AS "name_ru_u0",
+	"__KEY_root",
+	(SELECT 
+		"@Value",
+		"__FK_additionalIdentifiers"
+	FROM "additionalIdentifiers" FK "__FK_additionalIdentifiers" ArrayValueAlias "@Value"),
+	(SELECT 
+		"countryName",
+		"locality",
+		"postalCode",
+		"region",
+		"streetAddress",
+		"__FK_address"
+	FROM "address" FK "__FK_address"),
+	(SELECT 
+		"email",
+		"faxNumber",
+		"telephone",
+		"url",
+		"name_en",
+		"name_uk",
+		"name_ru",
+		"__FK_contactPoint"
+	FROM "contactPoint" FK "__FK_contactPoint"),
+	(SELECT 
+		"id",
+		"scheme",
+		"legalName_en",
+		"legalName_uk",
+		"legalName_ru",
+		"__FK_identifier"
+	FROM "identifier" FK "__FK_identifier")
+FROM JSON (wrap on) "root" PK "__KEY_root";
+
+Funders:
+LOAD	[name_en_u0] as Funder,
+	[name_uk_u0] as Донор,
+	[name_ru_u0] as ДонорРу,
+	[__KEY_root]
+RESIDENT RestConnectorMasterTableFunder
+WHERE NOT IsNull([__KEY_root]);
+
+//[additionalIdentifiers]:
+//LOAD	[@Value],
+//	[__FK_additionalIdentifiers] AS [__KEY_root]
+//RESIDENT RestConnectorMasterTableFunder
+//WHERE NOT IsNull([__FK_additionalIdentifiers]);
+
+
+Left Join (Funders)
+LOAD	[countryName] as [Країна донора],
+	[locality] as [Населений пункт донора],
+	[postalCode] as [Індекс донора],
+	[region] as [Регіон донора],
+	[streetAddress] as [Адреса донора],
+	[__FK_address] AS [__KEY_root]
+RESIDENT RestConnectorMasterTableFunder
+WHERE NOT IsNull([__FK_address]);
+
+Left Join (Funders)
+LOAD	[email] as [Email донора],
+	[faxNumber] as [Факс донора],
+	[telephone] as [Телефон донора],
+	[url] as [Посилання на донора],
+	[name_en] as [Funder contact point name],
+	[name_uk] as [Представник донора],
+	[name_ru] as [Представитель донора],
+	[__FK_contactPoint] AS [__KEY_root]
+RESIDENT RestConnectorMasterTableFunder
+WHERE NOT IsNull([__FK_contactPoint]);
+
+Left Join (Funders)
+LOAD	[id] as [Код донора],
+	[scheme] as [Код реєстру донора],
+	[scheme]&'_'&[id] as [Ключ донора],
+	[legalName_en] as [Funder legal name],
+	[legalName_uk] as [Юридична назва донора],
+	[legalName_ru] as [Юридическое название донора],
+	[__FK_identifier] AS [__KEY_root]
+RESIDENT RestConnectorMasterTableFunder
+WHERE NOT IsNull([__FK_identifier]);
+
+DROP TABLE RestConnectorMasterTableFunder;
+
+DROP Field [__KEY_root];
+
+STORE  Funders into $(DIC_QVD_PATH)Funders.qvd (qvd);
+DROP Table Funders;
+
+// For mapping table
+CountryMap:
+LOAD 
+	 DBCountry, 
+     RightCountry
+FROM
+[$(vPZOrgURL)]
+(ooxml, embedded labels, table is CountryMapping)
+Where NOT IsNull(DBCountry);
+
+STORE  CountryMap into $(DIC_QVD_PATH)CountryMap.qvd (qvd);
+DROP Table CountryMap;
+
+//SLEEP 8000;
+
+RegionMap:
+LOAD 
+	 DBRegion, 
+     RightRegion
+FROM
+[$(vPZOrgURL)]
+(ooxml, embedded labels, table is RegionMapping)
+Where NOT IsNull(DBRegion);
+
+STORE  RegionMap into $(DIC_QVD_PATH)RegionMap.qvd (qvd);
+DROP Table RegionMap;
+
+//SLEEP 8000;
+
+CityMap:
+LOAD 
+	 DBCity, 
+     RightCity
+FROM
+[$(vPZOrgURL)]
+(ooxml, embedded labels, table is CityMapping)
+Where NOT IsNull(DBCity);
+
+STORE  CityMap into $(DIC_QVD_PATH)CityMap.qvd (qvd);
+DROP Table CityMap;
+
+//SLEEP 8000;
+
+TendererMap:
+LOAD 
+	 DBTenderer, 
+     RightTenderer
+FROM
+[$(vPZOrgURL)]
+(ooxml, embedded labels, table is TendererMapping)
+Where NOT IsNull(DBTenderer);
+
+STORE  TendererMap into $(DIC_QVD_PATH)TendererMap.qvd (qvd);
+DROP Table TendererMap;
+
+//SLEEP 8000;
+
+OrganizerMap:
+LOAD 
+	 DBOrganizer, 
+     RightOrganizer
+FROM
+[$(vPZOrgURL)]
+(ooxml, embedded labels, table is OrganizerMapping)
+Where NOT IsNull(DBOrganizer);
+
+STORE  OrganizerMap into $(DIC_QVD_PATH)OrganizerMap.qvd (qvd);
+DROP Table OrganizerMap;
+
+//SLEEP 8000;
+
+OrgRegionCityMap:
+LOAD 
+	 text(IDOrganizator) as IDOrganizator, 
+     Region,
+     Locality
+FROM
+[$(vPZOrgURL)]
+(ooxml, embedded labels, table is OrgRegionCityMapping)
+Where NOT IsNull(IDOrganizator);
+
+STORE OrgRegionCityMap into $(DIC_QVD_PATH)OrgRegionCityMap.qvd (qvd);
+DROP Table OrgRegionCityMap;
+
+//SLEEP 8000;
+
+RegionCoordinates:
+LOAD 
+	 Region,
+	 RegionEN, 
+     Coordinates
+FROM
+[$(vPZOrgURL)]
+(ooxml, embedded labels, table is RegionCoordinates)
+Where NOT IsNull(Region);
+
+STORE  RegionCoordinates into $(DIC_QVD_PATH)RegionCoordinates.qvd (qvd);
+DROP Table RegionCoordinates;
+
+//SLEEP 8000;
+
+TendererNames:
+LOAD Text([identifier:id]) as IDTendererOrig, 
+     [identifier:scheme] as СхемаУчастника, 
+     name as Участник, 
+     [address:streetAddress] as АдресУчастника, 
+     [address:locality] as ГородУчастника, 
+     [address:region] as РегионУчастника, 
+     [address:postalCode] as ИндексУчастника, 
+     [address:countryName] as СтранаУчастника
+FROM
+[$(vPZOrgURL)]
+(ooxml, embedded labels, table is [Назви Учасників])
+Where NOT IsNull([identifier:id]);
+
+STORE  TendererNames into $(DIC_QVD_PATH)TendererNames.qvd (qvd);
+DROP Table TendererNames;
+
+Translations:
+LOAD 
+	 Index, 
+     Reference, 
+     English, 
+     Українська, 
+     Русский
+FROM
+[$(vPZOrgURL)]
+(ooxml, embedded labels, table is LanguageDictionary)
+Where NOT IsNull(Index);
+
+STORE  Translations into $(DIC_QVD_PATH)Translations.qvd (qvd);
+DROP Table Translations;
+
+// Флаг для возможности делать отборы по Организаторам в Single API
+apiExp:
+LOAD Distinct
+//	 [Назва закладу], 
+     text(ЄДРПОУ) as IDOrganizator,
+     ExpFlag
+FROM
+[$(vPZOrgURL)]
+(ooxml, embedded labels, table is apiExp);
+
+STORE apiExp into $(DIC_QVD_PATH)apiExp.qvd (qvd);
+DROP Table apiExp;
+
+//Перевод Хэлпов
+
+TranslationsHelp:
+LOAD 
+	 Index, 
+     Reference, 
+     English, 
+     Українська, 
+     Русский
+FROM
+[$(vHelpURL)]
+(ooxml, embedded labels, table is LanguageDictionary)
+Where NOT IsNull(Index);
+
+STORE  TranslationsHelp into $(DIC_QVD_PATH)TranslationsHelp.qvd (qvd);
+DROP Table TranslationsHelp;
+
+
+// Справочник выходных дней от КМУ 
+CUSTOM CONNECT TO "Provider=QvRestConnector.exe;url=https://prozorroukr.github.io/standards/calendar/workdays_off.json;sendExpect100Continue=True;checkResponseTypeOnTestConnection=true;authSchema=anonymous;skipServerCertificateValidation=1;timeout=30;method=GET;autoDetectResponseType=true;keyGenerationStrategy=3;useWindowsAuthentication=false;useCertificate=No;certificateStoreLocation=CurrentUser;certificateStoreName=My;PaginationType=None;XUserId=***;XPassword=***;";
+
+RestConnectorMasterTable:
+SQL SELECT 
+	"@Value"
+FROM JSON (wrap on) "root" ArrayValueAlias "@Value";
+
+Holidays:
+LOAD	Concat(''''&[@Value]&'''', ',') as Holidays
+RESIDENT RestConnectorMasterTable;
+
+DROP TABLE RestConnectorMasterTable;
+
+STORE  Holidays into $(DIC_QVD_PATH)Holidays.qvd (qvd);
+DROP Table Holidays;
+
+// Справочник единиц измерения
+UnitCodes_:
+LOAD @1 as ItemUnitCodeType, 
+     Replace(Replace(@2, '"', ''), ',', '') as [Од. виміру],
+     Text(if(@2='{', @1, Peek(ItemUnitCode, -1))) as ItemUnitCode
+FROM
+[https://prozorroukr.github.io/standards/unit_codes/recommended.json]
+(txt, utf8, no labels, delimiter is ':', msq)
+Where NOT Match(@1, '{', '},');
+
+UCMap:
+Mapping
+LOAD * Inline [
+UC1, 		UC2
+name_en,	name
+symbol_en,	symbol
+name_uk,	name
+symbol_uk,	symbol
+name_ru,	name
+symbol_ru,	symbol
+];
+
+MAP ItemUnitCodeType using UCMap;
+
+UnitCodes:
+NoConcatenate
+LOAD
+	 ItemUnitCodeType,
+	 [Од. виміру],
+	 ItemUnitCode
+Resident UnitCodes_
+Where ItemUnitCodeType like '*_uk' AND [Од. виміру]<>'';
+
+Left Join (UnitCodes)
+LOAD
+	 ItemUnitCodeType,
+	 [Од. виміру] as Unit,
+	 ItemUnitCode
+Resident UnitCodes_
+Where ItemUnitCodeType like '*_en' AND [Од. виміру]<>''; 
+
+Left Join (UnitCodes)
+LOAD
+	 ItemUnitCodeType,
+	 [Од. виміру] as [Ед. измерения],
+	 ItemUnitCode
+Resident UnitCodes_
+Where ItemUnitCodeType like '*_ru' AND [Од. виміру]<>''; 
+
+DROP Table UnitCodes_;
+
+STORE  UnitCodes into $(DIC_QVD_PATH)UnitCodes.qvd (qvd);
+DROP Table UnitCodes;
+
+// Перевод названий полей на укр. для Sense
+TranslateTable:
+LOAD F2 as FName, 
+     F3 as FUAName
+//     F4
+FROM
+[https://docs.google.com/spreadsheets/d/e/2PACX-1vQlk9xNbavhlTLTvlbBVYH5qHCUwb1LifHtI_q1HkTcImVMuPzu-CLS5t7PULBDR0og4WaOECJT5kVd/pubhtml?gid=1653875415&single=true]
+(html, utf8, embedded labels, table is @1)
+where F1 > 1 and len(F1) > 0;
+
+STORE TranslateTable into $(DIC_QVD_PATH)TranslateTable.qvd (qvd);
+DROP Table TranslateTable;
+
+//Справочник перевода переменных для Sense
+TranslationsSense:
+LOAD
+    F1 as LNo,
+    F2 as Ref,
+    F3 as UA,
+    F4 as EN
+FROM [https://docs.google.com/spreadsheets/u/1/d/1MIqfVeJHL-hRjAhRh-92G2n9JyYIPuLBayjotEDmHKU/gviz/tq?tqx=out:html&tq&gid=0]
+(html, utf8, embedded labels, table is @1)
+where F1 <> 'Index' and len(F1) > 0;
+
+STORE TranslationsSense into $(DIC_QVD_PATH)TranslationsSense.qvd (qvd);
+DROP Table TranslationsSense;
+
+//Справочник перевода внутренних инлайн таблиц для Sense
+TranslationsInTables:
+LOAD
+    F1 as Index,
+    F2 as Reference,
+    F3 as Українська,
+    F4 as English,
+    F5 as Condition
+FROM [https://docs.google.com/spreadsheets/u/1/d/1MIqfVeJHL-hRjAhRh-92G2n9JyYIPuLBayjotEDmHKU/gviz/tq?tqx=out:html&tq&gid=1243845428]
+(html, utf8, embedded labels, table is @1)
+where F1 <> 'Index' and len(F1) > 0;
+
+STORE TranslationsInTables into $(DIC_QVD_PATH)TranslationsInTables.qvd (qvd);
+DROP Table TranslationsInTables;
+
+//Справочник описания страниц модуля мед. закупок
+TranslationsSenseMed:
+LOAD
+	Index as LNo_D,
+	Reference as Ref_D,
+	Українська as UA_D,
+	English as EN_D
+FROM [https://docs.google.com/spreadsheets/d/1DN4mX_KZ-3wtL3d96pTBh-INTk20FjcKySLjRiroILs/gviz/tq?tqx=out:html&tq&gid=0]
+(html, utf8, embedded labels, table is @1)
+where len(Index) > 0;
+
+
+STORE TranslationsSenseMed into $(DIC_QVD_PATH)TranslationsSenseMed.qvd (qvd);
+DROP Table TranslationsSenseMed;
+
+//Справочник с описаниями страниц и их переводами ESCO
+SET Verbatim = 1;
+
+TranslationESCOhelps:
+LOAD
+    F1 as IndexHelp,
+//    Reference,
+    Replace(F3, '  ', '  ''&chr(13)&''') as УкраїнськаHelp,
+    Replace(F4, '  ', '  ''&chr(13)&''') as EnglishHelp
+FROM [https://docs.google.com/spreadsheets/u/1/d/1o7h4jXYfbDqOxoc9xqllaAtXEBop_GH-nqVLSwDwdzI/gviz/tq?tqx=out:html&tq&gid=0]
+(html, utf8, embedded labels, table is @1)
+where F1 <> 'Index' and len(F1) > 0;
+
+SET Verbatim = 0;
+
+STORE TranslationESCOhelps into $(DIC_QVD_PATH)TranslationESCOhelps.qvd (qvd);
+DROP Table TranslationESCOhelps;
+
+// Справочник черного списка АМКУ
+// ТЗ https://docs.google.com/document/d/1c8DNfB-lbS7cUiHjXg8ASB8ZxrTBJOoz91nZy-E8ZBw/edit
+SET ErrorMode =  0;
+AMKU_:
+LOAD  
+     Text(KeepChar(H, '0123456789')) as BLCode, 
+     Date(KeepChar(P, '0123456789')) as [Дата останнього оновлення чорного списку АМКУ],
+     RowNo() as LineNo 
+     FROM
+[$(vBLAMKU)]
+(ooxml, no labels, table is База);
+
+IF ScriptError <> 0 THEN
+
+	LoadResult: //isError
+	LOAD * Inline [
+	LoadError
+	1
+	];
+
+	ELSE
+	
+	LoadResult: // No Error
+	LOAD * Inline [
+	LoadError
+	0
+	];
+	
+ENDIF
+
+Store LoadResult into $(DIC_QVD_PATH)LoadResult.txt (txt);
+DROP Table LoadResult;
+
+AMKU:
+LOAD Distinct
+	 BLCode
+Resident 	AMKU_
+Where LineNo > 6 AND NOT IsNull(BLCode); 
+
+Left Join (AMKU)
+LOAD 
+	 [Дата останнього оновлення чорного списку АМКУ]
+Resident AMKU_
+Where 	LineNo = 1; 
+
+DROP Table AMKU_;
+
+STORE AMKU INTO $(DIC_QVD_PATH)AMKU.qvd (qvd);
+
+DROP Table AMKU;
+
+SET ErrorMode =  1;
+
+// Справочники регулярных выражений для определения причин разрыва договоров и дисквалификаций
+// ТЗ https://docs.google.com/document/d/12rJ_7375LEI1xKVzC5uWGwUEpz88H_7wo5WEKfr1VPM
+// OLD
+
+//RegExpBreakContractTemplate:
+//LOAD RegExp, 
+//     [Negative keywords], 
+//     Група as [Причина розірвання договору], 
+//     [Група (англ)] as [Cause of contract termination],
+//     Група as [Причина разрыва договора], 
+//     [Ініціатор розірвання договору], 
+//     Initiator,
+//     RowNo() - 1 as TermDetGroupID
+//FROM [$(vDicTable)]
+//(ooxml, embedded labels, table is [Причина розірвання договору])
+//Where NOT IsNull(Група);
+
+RegExpBreakContractTemplate:
+LOAD RegExp, 
+     [Negative keywords], 
+     Група as [Причина розірвання договору], 
+     [Група (англ)] as [Cause of contract termination],
+     Група as [Причина разрыва договора], 
+     [Ініціатор розірвання договору], 
+     Initiator,
+     RowNo() - 1 as TermDetGroupID
+FROM [https://docs.google.com/spreadsheets/d/1Xmxr6PiMuHEDDAQYRrlH97VoWf-vOYV4_T-VXwBZ9Os/export?format=xlsx&id=1Xmxr6PiMuHEDDAQYRrlH97VoWf-vOYV4_T-VXwBZ9Os]
+(ooxml, embedded labels, table is [Template2])
+Where NOT IsNull(Група);
+
+STORE RegExpBreakContractTemplate into $(DIC_QVD_PATH)RegExpBreakContractTemplate.qvd (qvd);
+DROP Table RegExpBreakContractTemplate;
+
+RegExpDisqualTemplate:
+LOAD RegExp, 
+     [Причини дискваліфікації], 
+     [Disqualification reasons],
+     DisqualGrpResID,
+     TitleDescription,
+     RowNo() - 1 as DisqualResID
+FROM [$(vRegExpFile)]
+(ooxml, embedded labels, table is TemplateDisqual)
+Where NOT IsNull([Причини дискваліфікації]) AND NOT IsNull(DisqualGrpResID);
+
+STORE RegExpDisqualTemplate into $(DIC_QVD_PATH)RegExpDisqualTemplate.qvd (qvd);
+DROP Table RegExpDisqualTemplate;
+
+// Справочники ДРЛЗ, МНН
+// ТЗ https://docs.google.com/spreadsheets/d/1Jv2VMrYYX4XBxvQkYXN2b3TRAfS3GXzRKlmJh37VYm0/edit#gid=822979722
+SET ErrorMode =  0;
+
+DRLZ:
+LOAD Distinct
+	Lower([Торгівельне найменування]) as [Торгівельне найменування], 
+	Lower([Міжнародне непатентоване найменування]) as МНН,
+	[Гомеопатичний ЛЗ],
+	[ЛЗ рослинного походження]
+FROM [$(vDRLZUrl)]
+(txt, codepage is 1251, embedded labels, delimiter is ';', msq);
+
+IF ScriptError = 0 THEN	
+	STORE DRLZ into [$(DIC_QVD_PATH)DRLZ.qvd] (qvd);
+	DROP Table DRLZ;
+ENDIF	
+
+SET ErrorMode =  1;
+
+DRLZstatic:
+LOAD Distinct
+	 Lower([Міжнародне непатентоване найменування]) as МНН, 
+ 	 [Номер реєстраційного посвідчення],
+     [Лікарська форма], 
+     Доза, 
+     [Кількість в первинній упаковці]
+FROM [$(vDRLZstaticUrl)]
+(ooxml, embedded labels, table is [Реестр 09.07]);
+
+STORE DRLZstatic into [$(DIC_QVD_PATH)DRLZstatic.qvd] (qvd);
+DROP Table DRLZstatic;
+	
+INNinNP:
+LOAD Distinct
+	 Lower(F1)  as МНН, 
+     F2 as [Належність до НП]
+FROM [$(vINNinNP)]
+(html, utf8, embedded labels, table is @1)
+Where F1 <> 'МНН';
+
+STORE INNinNP into [$(DIC_QVD_PATH)INNinNP.qvd] (qvd);
+DROP Table INNinNP;
+
+// Справочник действующих Юр. лиц
+// ТЗ https://docs.google.com/document/d/1aT3zBQr-IwPxEeirHjezwqwlgrHiF37upojYOcGRDlk	
+Passport:
+LOAD  
+     Date(Floor([Востаннє оновлено])) as changed
+FROM [https://data.gov.ua/dataset/1c7f3815-3259-45e0-bdf1-64dca07ddc10/passport_csv]
+(txt, utf8, embedded labels, delimiter is ',', msq);
+
+LET vNewChangeEDR = Peek('changed', -1, 'Passport');
+STORE changed from Passport into $(FILES_PATH)EDR_UO_DATE.txt (txt);
+DROP Table Passport;
+
+Datapackage:
+LOAD 
+	@2 as [ ]
+FROM [https://data.gov.ua/dataset/1c7f3815-3259-45e0-bdf1-64dca07ddc10/datapackage]
+(txt, utf8, no labels, delimiter is ': ', msq)
+Where @1 = 'path' AND @2 Like '*dataset*';
+
+STORE [ ] from Datapackage into $(FILES_PATH)EDR_UO_URL.txt (txt);
+DROP Table Datapackage;
+
+
+IF NOT IsNull(FileSize('$(DIC_QVD_PATH)EDR_UO.qvd')) THEN
+	EDR_UO:
+	LOAD Distinct 
+	     [Дата оновлення інформації про статус юридичної особи]
+	FROM $(DIC_QVD_PATH)EDR_UO.qvd (qvd);
+	
+	LET vOldChangeEDR = Peek('Дата оновлення інформації про статус юридичної особи', -1, 'EDR_UO');	
+	DROP Table EDR_UO;
+	ELSE
+	LET vOldChangeEDR = vNewChangeEDR - 1;
+ENDIF
+
+IF vNewChangeEDR <> vOldChangeEDR OR IsNull(FileSize('$(DIC_QVD_PATH)EDR_UO.qvd')) THEN
+	
+	SET vXMLEDRFile  = '15.1-EX_XML_EDR_UO.xml';
+	
+	EDR_UO_URL:
+	LOAD 
+		@1 as EDR_uo_URL,
+		'$(R_FILES_PATH)/15-ufop.zip' as ZipFileFullPath,
+		'$(R_FILES_PATH)' as ZipFilePath,
+		'$(vXMLEDRFile)' as XMLFile
+	FROM $(FILES_PATH)EDR_UO_URL.txt
+	(txt, utf8, explicit labels, delimiter is '\t', msq, header is 1 lines);
+	
+	// Загрузка файла архива и распаковка из него 15.1-EX_XML_EDR_UO.xml (R script)
+	ScalarLoadFromRscript:
+	LOAD
+		  R.ScriptEvalStr('download.file(q$EDR_uo_URL, q$ZipFileFullPath, quiet = TRUE, cacheOK = TRUE); zipF=unzip(q$ZipFileFullPath, list = TRUE)$Name[2]; unzip(q$ZipFileFullPath, zipF, list = FALSE, overwrite = TRUE, exdir = q$ZipFilePath);setwd("$(R_FILES_PATH)");as.character(file.rename(zipF, "$(vXMLEDRFile)")); zipF'/*для вывода имени файла*/, EDR_uo_URL, ZipFilePath, ZipFileFullPath) as FieldFromR
+	Resident EDR_UO_URL;	
+	
+	DROP Tables ScalarLoadFromRscript, EDR_UO_URL;
+
+	EDR_UO_:
+	LOAD Distinct
+	    Text(EDRPOU) as EDRPOU,
+	    STAN
+	FROM [$(FILES_PATH)$(vXMLEDRFile)] (XmlSimple, Table is [DATA/RECORD]);
+	
+	Left Join (EDR_UO_)
+	LOAD * Inline [
+	Orderp;	STAN
+	1;		припинено
+	2;		в стані припинення
+	3;		порушено справу про банкрутство (санація)
+	4;		порушено справу про банкрутство
+	5;		зареєстровано, свідоцтво про державну реєстрацію недійсне
+	6;		зареєстровано
+	]
+	(delimiter is ';');
+	
+	EDR_UO:
+	LOAD
+		 EDRPOU,
+		 LastValue(STAN) as [Статус юридичної особи із ЄДР],
+		 LastValue(Orderp) as StatusUOID
+	Resident EDR_UO_
+	Group By EDRPOU
+	Order By Orderp;
+	
+	DROP Table EDR_UO_;	 
+	
+	Left Join (EDR_UO)
+	LOAD Distinct 
+		 changed as [Дата оновлення інформації про статус юридичної особи],
+		 1 as Resident
+	FROM $(FILES_PATH)EDR_UO_DATE.txt
+	(txt, utf8, embedded labels, delimiter is '\t', msq);
+	
+	STORE EDR_UO into $(DIC_QVD_PATH)EDR_UO.qvd (qvd);
+	
+	DROP Table EDR_UO;
+
+ENDIF
+
+// Сума податкового боргу
+// ТЗ https://docs.google.com/document/d/1T85MbV_uMeRJ0QbiHWBzxZSSTrkR54PVOeYYSekbQqM	
+Passport:
+LOAD  
+     Date(Floor([Востаннє оновлено])) as changed
+FROM [https://data.gov.ua/dataset/af37e83b-5d0d-4d70-b8dc-d38ebc8054eb/passport_csv]
+(txt, utf8, embedded labels, delimiter is ',', msq);
+
+LET vNewChangeTAXDebt = Peek('changed', -1, 'Passport');
+STORE changed from Passport into $(FILES_PATH)TAX_DEBT_DATE.txt (txt);
+DROP Table Passport;
+
+CUSTOM CONNECT TO "Provider=QvRestConnector.exe;url=https://data.gov.ua/api/3/action/package_show?id%2af37e83b-5d0d-4d70-b8dc-d38ebc8054eb;sendExpect100Continue=True;checkResponseTypeOnTestConnection=true;authSchema=anonymous;skipServerCertificateValidation=1;timeout=300;method=GET;autoDetectResponseType=true;keyGenerationStrategy=3;useWindowsAuthentication=false;useCertificate=No;certificateStoreLocation=CurrentUser;certificateStoreName=My;PaginationType=None;XUserId=***;XPassword=***;";
+
+RestConnectorMasterTable:
+SQL SELECT 
+	"__KEY_root",
+	(SELECT 
+		"__FK_result",
+		"__KEY_result",
+		(SELECT 
+			"id",
+			"last_modified" AS "last_modified_u0",
+			"__FK_resources",
+			"__KEY_resources"
+		FROM "resources" PK "__KEY_resources" FK "__FK_resources")
+	FROM "result" PK "__KEY_result" FK "__FK_result")
+FROM JSON (wrap on) "root" PK "__KEY_root";
+
+[resources]:
+LOAD	[id],
+		[last_modified_u0]
+RESIDENT RestConnectorMasterTable
+WHERE NOT IsNull([__FK_resources])
+Order By [last_modified_u0];
+
+DROP TABLE RestConnectorMasterTable;
+
+LET vLastTAXDebtId = Peek('id', -1, 'resources');
+
+DROP Table [resources];
+
+RestConnectorMasterTable:
+SQL SELECT 
+	"__KEY_root",
+	(SELECT 
+		"url" AS "url_u0",
+		"__FK_result",
+		"__KEY_result"
+	FROM "result" PK "__KEY_result" FK "__FK_result")
+FROM JSON (wrap on) "root" PK "__KEY_root"
+WITH CONNECTION (URL "https://data.gov.ua/api/3/action/resource_show?id=$(vLastTAXDebtId)");
+
+[result]:
+LOAD	[url_u0] as [ ]
+RESIDENT RestConnectorMasterTable
+WHERE NOT IsNull([__FK_result]);
+
+DROP TABLE RestConnectorMasterTable;
+
+STORE [ ] from result into $(FILES_PATH)TAX_DEBT_URL.txt (txt);
+DROP Table result;
+
+IF NOT IsNull(FileSize('$(DIC_QVD_PATH)TAX_DEBT.qvd')) THEN
+	TAX_DEBT:
+	LOAD Distinct 
+	     [Дата оновлення інформації про податковий борг юридичних осіб]
+	FROM $(DIC_QVD_PATH)TAX_DEBT.qvd (qvd);
+	
+	LET vOldChangeTAXDebt = Peek('Дата оновлення інформації про податковий борг юридичних осіб', -1, 'TAX_DEBT');	
+	DROP Table TAX_DEBT;
+	ELSE
+	LET vOldChangeTAXDebt = vNewChangeTAXDebt - 1;
+ENDIF
+
+IF vNewChangeTAXDebt <> vOldChangeTAXDebt OR IsNull(FileSize('$(DIC_QVD_PATH)TAX_DEBT.qvd')) THEN
+	
+	TAX_DEBT_URL:
+	LOAD 
+		@1 as TAX_debt_URL,
+		'$(R_FILES_PATH)/'&Mid(@1, Index(@1, '/download/')+10) as ZipFileFullPath,
+		Mid(@1, Index(@1, '/download/')+10) as FileName,
+		'$(R_FILES_PATH)' as ZipFilePath
+//		TextBetween(@1, '/download/', 'zip')&'csv' as TAXDebtFile
+	FROM $(FILES_PATH)TAX_DEBT_URL.txt
+	(txt, utf8, explicit labels, delimiter is '\t', msq, header is 1 lines);
+	
+	SET vTAXDebtCSVFile = 'borg.csv';
+	SET vTAXDebtZIPFile = 'borg.zip';
+	
+	// Загрузка файла архива и распаковка из него (R script)
+	ScalarLoadFromRscript:
+	LOAD
+		  R.ScriptEvalStr('download.file(q$TAX_debt_URL, q$ZipFileFullPath, quiet = TRUE, cacheOK = TRUE); zipF=unzip(q$ZipFileFullPath, files = NULL, list = TRUE)$Name[1]; unzip(q$ZipFileFullPath, zipF, list = FALSE, overwrite = TRUE, exdir = q$ZipFilePath);setwd("$(R_FILES_PATH)");as.character(file.rename(zipF, "$(vTAXDebtCSVFile)"));as.character(file.rename(q$FileName, "$(vTAXDebtZIPFile)")); zipF', TAX_debt_URL, ZipFilePath, ZipFileFullPath, FileName) as FieldFromR
+	Resident TAX_DEBT_URL;	 
+	
+//	LET vTAXDebtCSVFile  = Peek('FieldFromR', -1, 'ScalarLoadFromRscript');
+	DROP Tables ScalarLoadFromRscript, TAX_DEBT_URL;
+	
+	TAX_DEBT_:
+	LOAD 
+	//	 NUM, 
+	//     NAME, 
+	     Text(TIN_S) as EDRPOU, 
+	//     PIB, 
+	//     DPI, 
+	//     DPI_BOSS, 
+	     RangeSum( SUM_D, SUM_M )*1000 as TAX_DEBT
+	FROM $(FILES_PATH)$(vTAXDebtCSVFile)
+	(txt, utf8, embedded labels, delimiter is ';')
+	Where Trim(TIN_S) > 1 AND IsNum(TIN_S);
+	
+	TAX_DEBT:
+	NoConcatenate
+	LOAD 
+		EDRPOU,
+		Sum(TAX_DEBT) as TAX_DEBT
+	Resident TAX_DEBT_
+	Group By EDRPOU;
+	
+	DROP Table TAX_DEBT_;
+		
+	Left Join (TAX_DEBT)
+	LOAD Distinct 
+		 changed as [Дата оновлення інформації про податковий борг юридичних осіб]
+	FROM $(FILES_PATH)TAX_DEBT_DATE.txt
+	(txt, utf8, embedded labels, delimiter is '\t', msq);
+	
+	STORE TAX_DEBT into $(DIC_QVD_PATH)TAX_DEBT.qvd (qvd);
+	
+	DROP Table TAX_DEBT;
+
+ENDIF
+
+// Организации и исключенные тендеры НафтоГаза
+Naftogaz:
+LOAD //Name,
+     Text(Id) as Id,
+	 1 as SheetNo 
+FROM
+[https://docs.google.com/spreadsheets/u/1/d/19KFGwsXdZeqFRsmCYJeoy3y_wEmvls9K7HASA2KYZZU/export?format=xlsx]
+(ooxml, embedded labels, table is Orgs)
+Where NOT IsNull(Id);
+
+Concatenate (Naftogaz)
+LOAD TenderId as Id,
+	 2 as SheetNo
+FROM
+[https://docs.google.com/spreadsheets/u/1/d/19KFGwsXdZeqFRsmCYJeoy3y_wEmvls9K7HASA2KYZZU/export?format=xlsx]
+(ooxml, embedded labels, table is ExclTenderes)
+Where NOT IsNull(TenderId);
+
+STORE Naftogaz INTO $(DIC_QVD_PATH)Naftogaz.qvd (qvd);
+
+drop table Naftogaz;
+
+// Справочники Организаторов GPA
+GPAOrganizator:
+LOAD Distinct
+//	 [Назва Замовника], 
+     Trim([GPA Kind]) as [GPA Kind], 
+     Text(EDRPOU) as IDOrganizator, 
+     Trim(Replace(Replace([Final ENG], Chr(10), ' '), Chr(13), ' ')) as OrganizatorEN
+FROM [$(vGPADictionary)]
+(ooxml, embedded labels, table is [Master sheet_All in one]);
+
+STORE GPAOrganizator INTO $(DIC_QVD_PATH)GPAOrganizator.qvd (qvd);
+
+DROP Table GPAOrganizator;
+
+SDRThreshold:
+LOAD Trim(Kind) as [GPA Kind], 
+     Trim([CPV type]) as [CPV type], 
+     Trim(Type) as [GPA type],
+     Trim(Тип) as [GPA тип],
+     Floor([SDR Threshold]) as [SDR Threshold]
+FROM [$(vGPADictionary)]
+(ooxml, embedded labels, table is [Пороги GPA], filters(
+Replace(1, top, StrCnd(null)),
+Remove(Row, RowCnd(CellValue, 3, StrCnd(null)))
+));
+
+STORE SDRThreshold INTO $(DIC_QVD_PATH)SDRThreshold.qvd (qvd);
+
+DROP Table SDRThreshold;
+
+// Справочник ДКПП
+// Не обновляется
+//ClassificationDKPP:
+//LOAD 
+//	 Text(@1) as ItemAddClasId, 
+//     @1&' '&@2 as Класс
+//FROM [http://standards.openprocurement.org/classifiers/dkpp/uk_pretty.yaml]
+//(txt, utf8, no labels, delimiter is ': ', msq, no eof);
+//
+//STORE  ClassificationDKPP into $(DIC_QVD_PATH)ClassificationDKPP.qvd (qvd);
+//DROP Table ClassificationDKPP;
+
+// Справочник CPV
+ItemCPV:
+LOAD
+	 @1 as IDClassCPV,
+	 @1&' '&@2 as ГруппаТовара
+;
+LOAD @1, 
+     Replace(Replace(@2, '",', ''), '"', '') as @2
+FROM
+[https://prozorroukr.github.io/standards/classifiers/dk021_uk.json]
+(txt, utf8, no labels, delimiter is ': ', msq)
+Where NOT Match(@1, '{', '}');
+
+Left Join (ItemCPV)
+LOAD
+	 @1 as IDClassCPV,
+	 @1&' '&@2 as ItemGroup
+;
+LOAD @1, 
+     Replace(Replace(@2, '",', ''), '"', '') as @2
+FROM
+[https://prozorroukr.github.io/standards/classifiers/dk021_uk.json]
+//[https://prozorroukr.github.io/standards/classifiers/cpv_en.json] //Їх немає. Поки доведеться всюди українську добавляти С. Павлюк 01.06.2017
+//26.03.2019 Не повний список
+(txt, utf8, no labels, delimiter is ': ', msq)
+Where NOT Match(@1, '{', '}');
+
+STORE  ItemCPV into $(DIC_QVD_PATH)ItemCPV.qvd (qvd);
+DROP Table ItemCPV;  
+
+// Справочник дорог
+// ТЗ https://docs.google.com/spreadsheets/d/10BNNhBCX5Sxlj63FyzNlrILgS6huqcKC0CVHqQKm7F0/edit#gid=660045764
+UAroads:
+LOAD
+	 @1 as [Індекс дороги],
+	 @2 as [Назва дороги]
+;
+LOAD @1, 
+     Replace(Replace(@2, '",', ''), '"', '') as @2
+FROM
+[https://prozorroukr.github.io/standards/classifiers/ua_road.json]
+(txt, utf8, no labels, delimiter is ': ', msq)
+Where NOT Match(@1, '{', '}');
+
+STORE  UAroads into $(DIC_QVD_PATH)UAroads.qvd (qvd);
+DROP Table UAroads; 
+
+// Додавання ризик-індикаторів DoZorro в модель даних
+// ТЗ https://docs.google.com/document/d/1nRc1U4n-tk9Go4eGbZyPy2HZAbUYtcfHfao3YDhqJrw/edit
+IF WeekDay(Today(1)) = 0 THEN //0 for Monday
+
+	ODBC CONNECT TO MySQL_RI;
+	
+	DoZorroRiskTypes:
+	LOAD
+		description as [Опис ризику],
+	    important as [Важливість ризику],
+	    Text(risk_code) as [Код ризику],
+	    risk_title as [Технічна назва ризику],
+	    title as [Назва ризику]
+	;	
+	SQL SELECT 
+		description,
+	    important,
+	    `risk_code`,
+	    `risk_title`,
+	    title
+	FROM `to_dozorro`.`dozorro_risks`
+	Where NOT `risk_code` LIKE 'F%';
+	
+	// Check records in dozorro_risk_values
+	Dozorro_risk_values:
+	SQL SELECT Distinct
+	    `risk_value`,
+	    `date`
+	FROM `to_dozorro`.`dozorro_risk_values`;
+	
+	LET vDozorro_risk_values = NoOfRows('Dozorro_risk_values');
+	DROP Table Dozorro_risk_values;
+	
+	IF NoOfRows('DoZorroRiskTypes')>0 AND vDozorro_risk_values > 0 THEN
+	
+		Left Join (DoZorroRiskTypes)
+		LOAD Text([Код ризику]) as [Код ризику], 
+		     [Тип ризику], 
+		     [Група ризику]
+		FROM [$(vDicTable)]
+		(ooxml, embedded labels, table is [Група ризику]);
+		
+		STORE DoZorroRiskTypes into $(DIC_QVD_PATH)DoZorroRiskTypes.qvd (qvd);
+		DROP Table DoZorroRiskTypes;
+		
+		DoZorroRisks:
+		LOAD
+			lot_id as IDLOT,
+		    Text(risk_code) as [Код ризику],
+		    risk_value as [Значення ризику],
+		    tender_id as ID,
+		    date
+		;	
+		SQL SELECT Distinct
+		    `lot_id`,
+		    `t1`.`risk_code` as `risk_code`,
+		    `risk_value`,
+		    `tender_id`,
+		    `date`
+		FROM `to_dozorro`.`dozorro_risk_values` t1
+		Right Join `to_dozorro`.`dozorro_risks` t2 ON `t1`.`risk_code`=`t2`.`risk_code` COLLATE utf8_unicode_ci
+		Where NOT `t2`.`risk_code` LIKE 'F%';
+		
+		STORE DoZorroRisks into $(TRN_QVD_PATH)DoZorroRisks.qvd (qvd);
+		DROP Table DoZorroRisks;
+		
+		ELSE
+		
+			DROP Table DoZorroRiskTypes;
+		
+	ENDIF	
+
+ENDIF
+///$tab 3 AddDic Plans
+// Класифікатор професій
+DK003:
+LOAD
+	 @1 as [Код класифікатора],
+	 @1&' '&@2 as [Назва коду класифікатора]
+;
+LOAD Text(@1) as @1, 
+     Replace(Replace(@2, '",', ''), '"', '') as @2
+FROM
+[https://prozorroukr.github.io/standards/classifiers/dk003_uk.json]
+(txt, utf8, no labels, delimiter is ': ', msq)
+Where NOT Match(@1, '{', '}');
+
+STORE DK003 into $(DIC_QVD_PATH)DK003.qvd (qvd);
+DROP Table DK003;
+
+// Державний класифікатор будівель та споруд
+DK018:
+LOAD
+	 @1 as [Код класифікатора],
+	 @1&' '&@2 as [Назва коду класифікатора]
+;
+LOAD Text(@1) as @1, 
+     Replace(Replace(@2, '",', ''), '"', '') as @2
+FROM
+[https://prozorroukr.github.io/standards/classifiers/dk018_uk.json]
+(txt, utf8, no labels, delimiter is ': ', msq)
+Where NOT Match(@1, '{', '}');
+
+STORE DK018 into $(DIC_QVD_PATH)DK018.qvd (qvd);
+DROP Table DK018;
+
+// Класифікація видів науково-технічної діяльності
+DK015:
+LOAD
+	 @1 as [Код класифікатора],
+	 @1&' '&@2 as [Назва коду класифікатора]
+;
+LOAD Text(@1) as @1, 
+     Replace(Replace(@2, '",', ''), '"', '') as @2
+FROM
+[https://prozorroukr.github.io/standards/classifiers/dk015_uk.json]
+(txt, utf8, no labels, delimiter is ': ', msq)
+Where NOT Match(@1, '{', '}');
+
+STORE DK015 into $(DIC_QVD_PATH)DK015.qvd (qvd);
+DROP Table DK015;
+
+KEKV:
+LOAD
+	 @1 as [Код класифікатора],
+	 @1&' '&@2 as [Назва коду класифікатора]
+;
+LOAD Text(@1) as @1, 
+     Replace(Replace(@2, '",', ''), '"', '') as @2
+FROM
+[https://prozorroukr.github.io/standards/classifiers/kekv_uk.json]
+(txt, utf8, no labels, delimiter is ': ', msq)
+Where NOT Match(@1, '{', '}');
+
+STORE KEKV into $(DIC_QVD_PATH)KEKV.qvd (qvd);
+DROP Table KEKV;
+
+// Перевод
+PlanTranslations:
+LOAD Index, 
+//     Reference, 
+     UA, 
+     EN
+FROM
+[https://docs.google.com/spreadsheets/u/0/d/1YEfbJb-6wABcE_m02eWTmdyRf73P3GEuZomYlZGL-70/export?format=xlsx]
+(ooxml, embedded labels, table is Dictionary)
+Where NOT IsNull(Index);
+
+STORE PlanTranslations into $(DIC_QVD_PATH)PlanTranslations.qvd (qvd);
+
+DROP Table PlanTranslations;
+///$tab Exit Script
+ 
+Exit Script;
+
